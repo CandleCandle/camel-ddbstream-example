@@ -150,10 +150,12 @@ public class Main {
         String lowerCase = System.getProperty("https_proxy");
         String upperCase = System.getProperty("HTTPS_PROXY");
         String proxyString = lowerCase == null ? upperCase : lowerCase;
+        LOG.info("attempting to locate a proxy from either {} or {}", lowerCase, upperCase);
         if (proxyString != null) {
             URI proxy = URI.create(proxyString);
             conf.setProxyHost(proxy.getHost());
             conf.setProxyPort(proxy.getPort());
+            LOG.info("Set proxy to: {}", proxy);
         }
     }
 }
