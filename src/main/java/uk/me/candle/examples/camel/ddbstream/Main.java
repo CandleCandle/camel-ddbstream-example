@@ -31,16 +31,16 @@ public class Main {
     private static final Logger LOG = LoggerFactory.getLogger(Main.class);
 
     private static class Args {
-        @Option(name = "--region", required = true)
+        @Option(name = "--region", required = true, usage = "The AWS region to use")
         private String region;
 
-        @Option(name = "--sequence-number")
+        @Option(name = "--sequence-number", usage = "The sequence number to start to start producing exchanges at. Required if --iterator-type is one of {at,after}_sequence_number")
         private String sequenceNumber;
 
-        @Option(name = "--iterator-type")
+        @Option(name = "--iterator-type", usage = "One of: trim_horizon, latest, at_sequence_number or after_sequence_number")
         private String iteratorType;
 
-        @Option(name = "--table-name", required = true)
+        @Option(name = "--table-name", required = true, usage = "DynamoDB table from which to obtain the change stream")
         private String tableName;
 
         public Region getRegion() {
@@ -90,15 +90,18 @@ public class Main {
             parser.parseArgument(args);
             new Main(argsBean).run();
         } catch (CmdLineException e) {
-            System.out.print(e.getMessage());
+            System.out.println(e.getMessage());
             parser.printSingleLineUsage(System.out);
+            System.out.println("");
+            System.out.println("");
             parser.printUsage(System.out);
+            System.out.println("");
         }
     }
 
     private final Args args;
 
-    public Main(Args args) {
+    Main(Args args) {
         this.args = args;
     }
 
@@ -132,6 +135,7 @@ public class Main {
 
         Thread.sleep(TimeUnit.MINUTES.toMillis(10)); // lazy delay.
         executor.shutdownNow();
+        camelContext.stop();
         LOG.info("Terminating after 10 minutes");
     }
 
