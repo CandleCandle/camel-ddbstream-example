@@ -15,8 +15,6 @@ import com.amazonaws.services.dynamodbv2.AmazonDynamoDBStreams;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBStreamsClient;
 import com.amazonaws.services.dynamodbv2.model.Record;
 
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -173,8 +171,6 @@ public class Main {
     void run() throws Exception {
         reConfigureLogging();
 
-        ScheduledExecutorService executor = Executors.newScheduledThreadPool(2);
-
         ClientConfiguration conf = new ClientConfiguration();
         applyProxy(conf);
 
@@ -183,7 +179,6 @@ public class Main {
         registry.put("ddbStreamsClient", client);
 
         CamelContext camelContext = new DefaultCamelContext(registry);
-        camelContext.setTypeConverterStatisticsEnabled(true);
         Endpoint stream = camelContext.getEndpoint(
                   "aws-ddbstream://" + args.getTableName()
                 + "?sequenceNumberProvider=" + args.getSequenceNumber()
@@ -196,10 +191,7 @@ public class Main {
         camelContext.addRoutes(new Routes(stream));
         camelContext.start();
 
-        executor.schedule(() -> LOG.info("Type Converter stats: {}", camelContext.getTypeConverterRegistry().getStatistics()), 30, TimeUnit.SECONDS);
-
         Thread.sleep(TimeUnit.MINUTES.toMillis(10)); // lazy delay.
-        executor.shutdownNow();
         camelContext.stop();
         LOG.info("Terminating after 10 minutes");
     }
