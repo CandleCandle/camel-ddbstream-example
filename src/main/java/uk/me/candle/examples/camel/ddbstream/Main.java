@@ -1,6 +1,12 @@
 package uk.me.candle.examples.camel.ddbstream;
 
 import java.net.URI;
+import java.util.Map;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Arrays;
 
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.regions.Region;
@@ -12,8 +18,10 @@ import com.amazonaws.services.dynamodbv2.model.Record;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import ch.qos.logback.classic.Level;
+import com.amazonaws.services.dynamodbv2.model.AttributeValue;
 import com.amazonaws.services.dynamodbv2.model.ShardIteratorType;
 import org.apache.camel.Body;
 import org.apache.camel.CamelContext;
@@ -63,8 +71,65 @@ public class Main {
     public static class Proc {
         private static final Logger LOG = LoggerFactory.getLogger(Proc.class);
         public void handle(@Body Record body) {
-            LOG.info("record: {}", body);
+
+            LOG.info("Event Type: {}", body.getEventName());
+            LOG.info("Sequence Number: {}", body.getDynamodb().getSequenceNumber());
+            Map<String, AttributeValue> keysMap = body.getDynamodb().getKeys();
+            final Map<String, AttributeValue> oldImage = body.getDynamodb().getOldImage();
+            final Map<String, AttributeValue> newImage = body.getDynamodb().getNewImage();
+
+            logMap(keysMap, "key");
+            logMap(newImage, "new");
+            logMap(oldImage, "old");
+
+            Map<String, AttributeValue> added = new HashMap<>(newImage == null ? Collections.emptyMap() : newImage);
+            if (oldImage != null) oldImage.keySet().forEach(k -> added.remove(k));
+
+            Map<String, AttributeValue> removed = new HashMap<>(oldImage == null ? Collections.emptyMap() : oldImage);
+            if (newImage != null) newImage.keySet().forEach(k -> removed.remove(k));
+
+            Map<String, Pair<AttributeValue, AttributeValue>> modified = new HashMap<>();
+            if (newImage != null) {
+                newImage.forEach((k, v) -> {
+                    Map<String, AttributeValue> old = oldImage;
+                    if (old != null && old.containsKey(k) && !old.get(k).equals(v)) {
+                        modified.put(k, new Pair<>(old.get(k), v));
+                    }
+                });
+            }
+
+            if (!added.isEmpty()) logMap(added, "added");
+            if (!removed.isEmpty()) logMap(removed, "removed");
+            if (!modified.isEmpty()) {
+                int max = modified.keySet().stream().map(String::length).reduce(0, (a, b) -> Math.max(a, b));
+                modified.forEach((k, v) -> LOG.info("modified: {} -> {} ==> {}", padr(k, max+2, ' '), v.a, v.b));
+            }
         }
+
+        private void logMap(Map<String, AttributeValue> newRecord, String pfx) {
+            if (newRecord == null) return;
+            int max = newRecord.keySet().stream().map(String::length).reduce(0, (a, b) -> Math.max(a, b));
+            newRecord.forEach((k, v) -> LOG.info("{}: {} -> {}", pfx, padr(k, max+2, ' '), v.toString()));
+        }
+
+    }
+
+    private static class Pair<A, B> {
+        private final A a;
+        private final B b;
+
+        Pair(A a, B b) {
+            this.a = a;
+            this.b = b;
+        }
+    }
+
+    private static CharSequence padr(String in, int toLength, char padChar) {
+        if (in.length() >= toLength) return in;
+        char[] arr = new char[toLength];
+        Arrays.fill(arr, padChar);
+        System.arraycopy(in.toCharArray(), 0, arr, 0, in.length());
+        return new String(arr);
     }
 
     private static class Routes extends RouteBuilder {
@@ -150,13 +215,24 @@ public class Main {
         );
     }
 
+    private static final List<String> PROXY_PROPS = new ArrayList<>();
+    static {
+        PROXY_PROPS.add("HTTPS_PROXY");
+        PROXY_PROPS.add("https_proxy");
+    }
     private static void applyProxy(ClientConfiguration conf) {
-        String lowerCase = System.getProperty("https_proxy");
-        String upperCase = System.getProperty("HTTPS_PROXY");
-        String proxyString = lowerCase == null ? upperCase : lowerCase;
-        LOG.info("attempting to locate a proxy from either {} or {}", lowerCase, upperCase);
-        if (proxyString != null) {
-            URI proxy = URI.create(proxyString);
+        AtomicReference<String> proxyString = new AtomicReference<>();
+        PROXY_PROPS.stream()
+                .map(s -> System.getenv(s))
+                .filter(s -> s != null)
+                .forEach(s -> proxyString.set(s));
+        PROXY_PROPS.stream()
+                .map(s -> System.getProperty(s))
+                .filter(s -> s != null)
+                .forEach(s -> proxyString.set(s));
+        LOG.info("attempting to locate a proxy from {}", proxyString.get());
+        if (proxyString.get() != null && !proxyString.get().isEmpty()) {
+            URI proxy = URI.create(proxyString.get());
             conf.setProxyHost(proxy.getHost());
             conf.setProxyPort(proxy.getPort());
             LOG.info("Set proxy to: {}", proxy);
