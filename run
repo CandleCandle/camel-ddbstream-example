@@ -1,0 +1,15 @@
+#!/bin/bash
+
+table="${1:-encoders}"
+iterator_type="${2:-latest}"
+sequence_number="$3"
+
+
+java -jar \
+	-DLOG.org.apache.camel=info \
+	target/camel-ddbstream-example-0.1-SNAPSHOT-jar-with-dependencies.jar \
+	--region eu-west-1 \
+	--iterator-type "$iterator_type" \
+	--table-name "$table" \
+	--sequence-number "$sequence_number" \
+	| sed 's/.*INFO  .* - //'
